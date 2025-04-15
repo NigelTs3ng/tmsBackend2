@@ -4,4 +4,4 @@
 // // To check if user is authenticated or not 
 // exports.isAuthenticated
 
-const 
+// const 
