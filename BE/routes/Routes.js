@@ -14,6 +14,7 @@ router.post("/editDetails", UserController.editDetails)
 router.post("/checkGroup", UserController.checkGroup)
 router.post("/viewProfile", UserController.viewProfile)
 router.post("/editProfile", UserController.editProfile)
+router.post("/verifyToken", UserController.verifyToken)
 
 // TMS routes
 router.post("/createApp", TMScontroller.createApplication)

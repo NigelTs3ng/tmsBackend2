@@ -48,6 +48,15 @@ async function verifyUser(token) {
   }
 }
 
+/*--------------------------------------Verify Token------------------------------------------*/
+exports.verifyToken = catchAsyncErrors(async (req, res) => {
+  const token = req.headers.authorization 
+  let verify = await verifyUser(token)
+  if (!verify) {
+    return res.json({ error: "Token is invalid!" })
+  }
+})
+
 /*--------------------------------------Register User------------------------------------------*/
 exports.registerUser = catchAsyncErrors(async (req, res) => {
   const { username, email, password, userGroup, isActive } = req.body
