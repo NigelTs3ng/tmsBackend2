@@ -15,18 +15,18 @@ app.use(
   })
 )
 
-app.use((req, res, next) => {
-  // Middleware for valid endpoint check
-  console.log(req.originalUrl)
-  const isValidURIPattern = /^(\/?[a-zA-Z0-9])+$/
+// app.use((req, res, next) => {
+//   // Middleware for valid endpoint check
+//   console.log(req.originalUrl);
+//   const isValidURIPattern = /^[\/a-zA-Z0-9?=&._-]+$/; // Updated regex to allow common URL patterns
 
-  if (!isValidURIPattern.test(req.originalUrl)) {
-    return res.json({
-      code: "RS001"
-    })
-  }
-  next()
-})
+//   if (!isValidURIPattern.test(req.originalUrl)) {
+//     return res.json({
+//       code: "RS001"
+//     });
+//   }
+//   next();
+// });
 // User Routes
 app.use("", Routes)
 app.use("", (req, res, next) => {
