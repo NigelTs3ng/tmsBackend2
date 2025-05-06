@@ -1,24 +1,31 @@
 const catchAsyncErrors = require("../middlewares/catchAsyncErrors")
-const connection = require("../config/database")
-// const session = require("express-session")
+const db = require("../config/firebase") // Use Firebase Firestore
 const bcrypt = require("bcrypt")
 const ErrorHandler = require("../utils/errorHandlers")
 const jwt = require("jsonwebtoken")
 const checkGroup = require("../controllers/checkGroup")
 
-/*--------------------------------------Session Config-----------------------------------------*/
+/*---------------------------Creating a user for db (initial setup)------------------------------------------*/
 
-// app.use(
-//   session({
-//     secret: "secret_key",
-//     resave: false,
-//     saveUninitialized: true
-//   })
-// )
+// Seed data for initial setup
+async function seedData() {
+  const hashedPassword = await bcrypt.hash("hello", 10); // Hash the password before storing it
+
+  await db.collection("users").doc("admin@example.com").set({ // Use "admin@example.com" as the document ID
+    email: "admin@example.com",
+    password: hashedPassword, // Store the hashed password
+    userGroup: "admin",
+    isActive: 1
+  });
+
+  await db.collection("groups").doc("admin").set({});
+  console.log("Data seeded successfully!");
+}
+
+// Uncomment the following line to run the seed function
+// seedData();
 
 /*--------------------------------------Auth Functions------------------------------------------*/
-
-//Check out no. of hops here:
 
 const getToken = user => {
   return jwt.sign({ user: user }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRY_TIME })
@@ -41,47 +48,25 @@ async function verifyUser(token) {
   }
 }
 
-async function checkUserActive(res, req, next) {
-  const token = req.body.token
-  const user = await verifyUser(token)
-
-  if (!user) {
-    return res.json({ error: "Invalid user/token!" })
-  }
-
-  const [results] = connection.execute("SELECT userGroup FROM users WHERE username ?", [user])
-  if (results.length < 1 || results[0].userGroup == 0) {
-    return res.json({ error: "User has been disabled!" })
-  }
-  next()
-}
-
 /*--------------------------------------Register User------------------------------------------*/
 exports.registerUser = catchAsyncErrors(async (req, res) => {
   const { username, email, password, userGroup, isActive } = req.body
-  console.log(req.body)
   const token = req.headers.authorization
 
   if (!token) {
-    return res.json({
-      error: "Token must be provided!"
-    })
+    return res.json({ error: "Token must be provided!" })
   }
 
   // Verify token
   let verify = await verifyUser(token)
-  console.log("verify: " + verify)
   if (!verify) {
-    console.log("verify: " + verify)
     return res.json({ error: "Token is invalid!" })
   }
 
   // Check Active
-  const [resultsActive] = await connection.execute("SELECT isActive FROM users WHERE username = ?", [verify])
-  if (resultsActive[0].isActive === 0) {
-    return res.status(400).json({
-      error: "User is inactive!"
-    })
+  const userDoc = await db.collection("users").doc(verify).get()
+  if (!userDoc.exists || userDoc.data().isActive === 0) {
+    return res.status(400).json({ error: "User is inactive!" })
   }
 
   // Check group if admin
@@ -89,121 +74,95 @@ exports.registerUser = catchAsyncErrors(async (req, res) => {
   let checkGroupResult = await checkGroup(verify, group)
   if (!checkGroupResult) {
     return res.status(400).json({ error: "Invalid access to view this!" })
-  } else {
-    try {
-      const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,10}$/
-
-      if (!passwordRegex.test(password)) {
-        res.json({ error: "Email and/or password is invalid" })
-        return
-      }
-
-      // Hashing password with bcrypt
-      const hashedPassword = await bcrypt.hash(password, 10)
-
-      const sql = "INSERT INTO users (username, email, password, userGroup, isActive) VALUES (?, ?, ?, ?, ?)"
-      const [rows] = await connection.execute(sql, [username, email || null, hashedPassword, userGroup || null, isActive || null])
-      // console.log(rows)
-
-      res.status(200).json({
-        success: true,
-        message: "User registered successfully!",
-        data: rows
-      })
-    } catch (err) {
-      // Send the error message in the response
-      res.status(400).json({
-        success: false,
-        message: "User not registered",
-        error: err.message // Include the error message for debugging
-      })
-      console.log("Error registering!", err)
-    }
-  }
-
-  //Do another conditional here to check if username and password is there
-})
-
-/*--------------------------------------Login User------------------------------------------*/
-exports.loginUser = catchAsyncErrors(async (req, res, next) => {
-  const { username, password } = req.body
-
-  //Check username or password empty
-  if (!username || !password) {
-    return res.json({
-      error: "Username and/or password is incorrect!"
-    })
-  }
-
-  // Password length validation
-  if (password.length < 8 || password.length > 10) {
-    return res.json({
-      error: "Username and/or password is incorrect!"
-    })
   }
 
   try {
-    // Check if user exist & password validity
-    const [results] = await connection.execute("SELECT * FROM users WHERE username = ?", [username])
-    if (results.length < 1) {
-      return res.json({
-        error: "Username and/or password is incorrect!"
-      })
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,10}$/
+    if (!passwordRegex.test(password)) {
+      return res.json({ error: "Email and/or password is invalid" })
     }
 
-    // Check Active
-    const [resultsActive] = await connection.execute("SELECT isActive FROM users WHERE username = ?", [username])
-    if (resultsActive[0].isActive === 0) {
-      return res.json({
-        error: "User is inactive!"
-      })
-    }
+    // Hashing password with bcrypt
+    const hashedPassword = await bcrypt.hash(password, 10)
 
-    //Check if password is correct
-    const match = bcrypt.compareSync(password, results[0].password)
-    if (!match) {
-      return res.json({
-        error: "Username and/or password is incorrect!"
-      })
-    }
+    // Add user to Firestore
+    await db.collection("users").doc(username).set({
+      email: email || null,
+      password: hashedPassword,
+      userGroup: userGroup || null,
+      isActive: isActive || null
+    })
 
-    //If user is verified, create JWT for user
-    const token = getToken(username)
-
-    //Session settings
-    // req.session.isLoggedIn = true
-    // req.session.username = username
-
-    //Return token in response
-    return res.json({ error: null, response: "Login Successful!", token: token })
+    res.status(200).json({
+      success: true,
+      message: "User registered successfully!"
+    })
   } catch (err) {
-    return next(new ErrorHandler("Internal Server Error!", 500))
+    res.status(400).json({
+      success: false,
+      message: "User not registered",
+      error: err.message
+    })
   }
 })
 
+/*--------------------------------------Login User------------------------------------------*/
+// filepath: /Users/werkspace/Desktop/Code Projs/hr-fe-be/tmsBackend2/BE/controllers/userController.js
+// filepath: /Users/werkspace/Desktop/Code Projs/hr-fe-be/tmsBackend2/BE/controllers/userController.js
+exports.loginUser = catchAsyncErrors(async (req, res, next) => {
+  const { username, password } = req.body;
+
+  console.log("Login attempt:", { username, password }); // Log the input payload
+
+  if (!username || !password) {
+    return res.json({ error: "Username and/or password is incorrect!" });
+  }
+
+  try {
+    const userDoc = await db.collection("users").doc(username).get();
+    console.log("Fetched user document:", userDoc.exists ? userDoc.data() : "User not found"); // Log the fetched user data
+
+    if (!userDoc.exists) {
+      return res.json({ error: "Username and/or password is incorrect!" });
+    }
+
+    const userData = userDoc.data();
+    if (userData.isActive === 0) {
+      return res.json({ error: "User is inactive!" });
+    }
+
+    const match = bcrypt.compareSync(password, userData.password);
+    console.log("Password match:", match); // Log whether the password matches
+
+    if (!match) {
+      return res.json({ error: "Username and/or password is incorrect!" });
+    }
+
+    const token = getToken(username);
+    return res.json({ error: null, response: "Login Successful!", token: token });
+  } catch (err) {
+    console.error("Error during login:", err); // Log any errors
+    return next(new ErrorHandler("Internal Server Error!", 500));
+  }
+});
+
 /*--------------------------------------View all users---------------------------------------*/
 exports.viewAllUsers = catchAsyncErrors(async (req, res, next) => {
-  // Get token from request headers
-  const token = req.headers.authorization // Use 'authorization' header for the token
-
+  const token = req.headers.authorization
   if (!token) {
     return res.json({ error: "Token must be provided!" })
   }
 
-  // Verify token
   let verify = await verifyUser(token)
   if (!verify) {
     return res.json({ error: "Token is invalid!" })
   }
 
-  const [resultsActive] = await connection.execute("SELECT isActive FROM users WHERE username = ?", [verify])
-  if (resultsActive[0].isActive === 0) {
-    return res.json({
-      error: "User is inactive!"
-    })
+  const userDoc = await db.collection("users").doc(verify).get()
+  if (!userDoc.exists || userDoc.data().isActive === 0) {
+    return res.json({ error: "User is inactive!" })
   }
 
-  // Check group if admin
   let group = "admin"
   let checkGroupResult = await checkGroup(verify, group)
   if (!checkGroupResult) {
@@ -211,8 +170,9 @@ exports.viewAllUsers = catchAsyncErrors(async (req, res, next) => {
   }
 
   try {
-    const [results] = await connection.execute("SELECT username, password, email, userGroup, isActive FROM users")
-    res.json({ error: null, response: results })
+    const usersSnapshot = await db.collection("users").get()
+    const users = usersSnapshot.docs.map(doc => doc.data())
+    res.json({ error: null, response: users })
   } catch (err) {
     return next(new ErrorHandler("Internal Server Error!", 500))
   }
@@ -220,198 +180,168 @@ exports.viewAllUsers = catchAsyncErrors(async (req, res, next) => {
 
 /*--------------------------------------View all Usergroups--------------------------------*/
 exports.viewAllGroups = catchAsyncErrors(async (req, res, next) => {
-  // Get token from request headers
-  const token = req.headers.authorization // Use 'authorization' header for the token
-  console.log("request headers here: ", req.headers.authorization)
-
+  const token = req.headers.authorization;
   if (!token) {
-    return res.json({ error: "Token must be provided!" })
+    return res.json({ error: "Token must be provided!" });
   }
 
-  // Verify token
-  let verify = await verifyUser(token)
+  let verify = await verifyUser(token);
   if (!verify) {
-    console.log("verify: " + verify)
-    return res.json({ error: "Token is invalid!" })
+    return res.json({ error: "Token is invalid!" });
   }
-
-  // // Check group if admin
-  // let group = "admin"
-  // let checkGroupResult = await checkGroup(verify, group)
-  // if (!checkGroupResult) {
-  //   return res.json({ error: "Invalid access to view this!" })
-  // }
 
   try {
-    const [results] = await connection.execute("SELECT * from `groups`")
-    res.json({ error: null, response: results })
+    const groupsSnapshot = await db.collection("groups").get();
+    const groups = groupsSnapshot.docs.map(doc => ({
+      id: doc.id, 
+      ...doc.data(), 
+    }));
+    res.json({ error: null, response: groups });
   } catch (err) {
-    return next(new ErrorHandler("Internal Server Error!", 500))
+    return next(new ErrorHandler("Internal Server Error!", 500));
   }
-})
+});
 
 /*--------------------------------------Create New Usergroups-------------------------------------*/
 
 exports.createGroup = catchAsyncErrors(async (req, res, next) => {
-  const { userGroup, token } = req.body
+  const { userGroup } = req.body; // Only take the userGroup from the body
+  const token = req.headers.authorization; // Take the token from the headers
 
-  // Verify token
-  let verify = await verifyUser(token)
-  if (!verify) {
-    console.log("verify: " + verify)
-    return res.json({ error: "Token is invalid" })
+  if (!token) {
+    return res.json({ error: "Token must be provided!" });
   }
 
-  // Check group if admin (Try not to hardcode admin into create group)
-  let group = "admin"
-  let checkGroupResult = await checkGroup(verify, group)
+  let verify = await verifyUser(token); // Verify the token
+  if (!verify) {
+    return res.json({ error: "Token is invalid!" });
+  }
+
+  let group = "admin";
+  let checkGroupResult = await checkGroup(verify, group); // Check if the user belongs to the admin group
   if (!checkGroupResult) {
-    res.json({ error: "Invalid access to view this!" })
+    return res.json({ error: "Invalid access to create a group!" });
   }
 
   try {
-    const [results] = await connection.execute("SELECT * from `groups` WHERE userGroup = ?", [userGroup])
+    const groupDoc = await db.collection("groups").doc(userGroup).get();
 
-    if (results.length > 0) {
-      res.json({
+    if (groupDoc.exists) {
+      return res.json({
         error: "This user group already exists!"
-      })
+      });
     }
-    const [replace] = await connection.execute("INSERT INTO `groups` (userGroup) VALUES (?)", [userGroup])
-    res.json({ error: null, message: "User group has been added!" })
+
+    await db.collection("groups").doc(userGroup).set({});
+    res.json({ error: null, message: "User group has been added!" });
   } catch (err) {
-    return next(new ErrorHandler("Internal Server Error!", 500))
+    return next(new ErrorHandler("Internal Server Error!", 500));
   }
-})
+});
 
 /*--------------------------------------Change User Details--------------------------------------*/
 
 exports.editDetails = catchAsyncErrors(async (req, res, next) => {
-  const token = req.headers.authorization
+  const token = req.headers.authorization;
   if (!token) {
     return res.json({
       error: "Token is required!"
-    })
+    });
   }
 
-  // Verify token
-  let verify = await verifyUser(token)
+  let verify = await verifyUser(token);
   if (!verify) {
-    return res.json({ error: "Token is invalid" })
+    return res.json({ error: "Token is invalid" });
   }
 
-  // Check group if admin
-  let group = "admin"
-  let checkGroupResult = await checkGroup(verify, group)
+  let group = "admin";
+  let checkGroupResult = await checkGroup(verify, group);
   if (!checkGroupResult) {
-    return res.json({ error: "Invalid access to view this!" })
+    return res.json({ error: "Invalid access to view this!" });
   }
 
-  const { username, newPassword, newEmail, newUsergroup, isActive } = req.body
-  console.log("body here: ", req.body)
+  const { username, newPassword, newEmail, newUsergroup, isActive } = req.body;
 
   try {
-    const verify = await verifyUser(token)
-    console.log("verify here: ", verify)
+    const userDoc = await db.collection("users").doc(username).get();
 
-    const [results] = await connection.execute("SELECT * FROM users WHERE username = ?", [username])
-
-    // Check if user exists in the database
-    if (results.length < 1) {
-      res.json({
+    if (!userDoc.exists) {
+      return res.json({
         error: "This user does not exist!"
-      })
+      });
     }
 
-    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,10}$/
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,10}$/;
 
-    // Encrypt new password, else return old password
-    const hashedPassword = newPassword ? bcrypt.hashSync(newPassword, 10) : results[0].password
+    const hashedPassword = newPassword && passwordRegex.test(newPassword)
+      ? bcrypt.hashSync(newPassword, 10)
+      : undefined;
 
-    // Main body of query
-    let query = "UPDATE users SET "
-    let params = []
+    // Build the updatedData object, excluding undefined values
+    const updatedData = {};
+    if (hashedPassword) updatedData.password = hashedPassword;
+    if (newEmail) updatedData.email = newEmail;
+    if (newUsergroup) updatedData.userGroup = newUsergroup;
+    if (typeof isActive !== "undefined") updatedData.isActive = isActive;
 
-    // Password length validation
-    if (newPassword !== undefined && newPassword !== null && newPassword !== "") {
-      if (!passwordRegex.test(newPassword)) {
-        res.json({ error: "Email and/or password is invalid" })
-        return
-      } else {
-        query += "password = ?, "
-        params.push(hashedPassword)
-      }
+    // Check if updatedData is empty
+    if (Object.keys(updatedData).length === 0) {
+      return res.json({
+        error: "No valid fields provided for update!"
+      });
     }
 
-    if (newEmail || newEmail === "") {
-      query += "email = ?, "
-      params.push(newEmail)
-    }
-
-    if (newUsergroup || newUsergroup === "") {
-      query += "userGroup = ?, "
-      params.push(newUsergroup)
-    }
-
-    query += "isActive = ?, "
-    params.push(isActive)
-
-    // Remove the trailing comma and space
-    query = query.slice(0, -2)
-    console.log("query here: ", query)
-
-    query += " WHERE username = ?"
-    params.push(username)
-
-    console.log(query, params)
-    await connection.execute(query, params)
+    await db.collection("users").doc(username).update(updatedData);
     return res.json({
       error: null,
       message: "Details changed successfully!",
       username: verify.user
-    })
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message });
   }
-})
+});
 
 /*--------------------------------------Check group--------------------------------------*/
 
 exports.checkGroup = catchAsyncErrors(async (req, res, next) => {
-  const { token, userGroup } = req.body
+  const { token, userGroup } = req.body;
 
   try {
-    const verify = await verifyToken(token)
-    const CheckUser = await checkGroup(verify.user, userGroup)
-    if (CheckUser) {
+    // Verify the token to extract the username
+    const verify = await verifyToken(token);
+
+    // Fetch the user's document from Firestore
+    const userDoc = await db.collection("users").doc(verify.user).get();
+
+    // Check if the user exists and belongs to the specified group
+    if (userDoc.exists && userDoc.data().userGroup === userGroup) {
       return res.json({
         error: null,
         message: "User is valid!",
         response: true
-      })
+      });
     } else {
       return res.json({
         error: "User is invalid",
         response: false
-      })
+      });
     }
   } catch (err) {
-    console.error("Internal Server Error: ", err)
-    return res.status(500).json({ error: "Internal Server Error" })
+    console.error("Internal Server Error: ", err);
+    return res.status(500).json({ error: "Internal Server Error" });
   }
-})
+});
 
 /*--------------------------------------Profile--------------------------------------*/
 
 exports.viewProfile = catchAsyncErrors(async (req, res, next) => {
-  // Get token from request headers
   const token = req.headers.authorization
 
   if (!token) {
     return res.json({ error: "Token must be provided" })
   }
 
-  // Verify token
   let verify = await verifyUser(token)
 
   if (!verify) {
@@ -419,14 +349,13 @@ exports.viewProfile = catchAsyncErrors(async (req, res, next) => {
   }
 
   try {
-    // Use a prepared statement to prevent SQL injection
-    const [results] = await connection.execute("SELECT username, email FROM users WHERE username = ?", [verify])
+    const userDoc = await db.collection("users").doc(verify).get()
 
-    if (results.length === 0) {
+    if (!userDoc.exists) {
       return res.json({ error: "User not found" })
     }
 
-    const user = results[0]
+    const user = userDoc.data()
     res.json({ error: null, response: user })
   } catch (err) {
     return next(new ErrorHandler("Internal Server Error!", 500))
@@ -448,54 +377,31 @@ exports.editProfile = catchAsyncErrors(async (req, res, next) => {
   try {
     const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,10}$/
     const verify = await verifyToken(token)
-    const [resultsActive] = await connection.execute("SELECT isActive FROM users WHERE username = ?", [verify.user])
-    if (resultsActive[0].isActive === 0) {
+    const userDoc = await db.collection("users").doc(verify.user).get()
+
+    if (!userDoc.exists || userDoc.data().isActive === 0) {
       return res.status(400).json({
         error: "User is inactive!"
       })
     }
-    const [results] = await connection.execute("SELECT * FROM users WHERE username = ?", [verify.user])
 
-    // Check if user exists in db
-    if (results.length < 1) {
-      res.json({
-        error: "This user does not exist!"
-      })
+    const hashedPassword = newPassword ? bcrypt.hashSync(newPassword, 10) : userDoc.data().password
+
+    const updatedData = {}
+
+    if (newPassword && passwordRegex.test(newPassword)) {
+      updatedData.password = hashedPassword
     }
 
-    // Encrypt new password, else return old password
-    const hashedPassword = newPassword ? bcrypt.hashSync(newPassword, 10) : results[0].password
-
-    // Main body of the query
-    let query = "UPDATE users SET"
-    let params = []
-
-    // Password length validation
-    if (newPassword !== undefined && newPassword !== null && newPassword !== "") {
-      if (!passwordRegex.test(newPassword)) {
-        res.json({ error: "Email and/or password is invalid" })
-        return
-      } else {
-        query += " password = ?,"
-        params.push(hashedPassword || null)
-      }
+    if (newEmail) {
+      updatedData.email = newEmail
     }
 
-    if (newEmail !== undefined) {
-      query += " email = ?,"
-      params.push(newEmail)
-    }
-
-    // Remove trailing comma
-    query = query.slice(0, -1)
-    query += " WHERE username = ?"
-    params.push(verify.user)
-
-    await connection.execute(query, params)
+    await db.collection("users").doc(verify.user).update(updatedData)
     return res.json({
       error: null,
       message: "Password/Username changed successfully!",
-      username: verify.username // Corrected the response
+      username: verify.user
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
