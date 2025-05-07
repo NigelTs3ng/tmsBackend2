@@ -10,7 +10,7 @@ app.use(express.json())
 // Configure CORS
 app.use(
   cors({
-    origin: "http://localhost:8090",
+    origin: "http://localhost:9000",
     methods: ["GET", "POST", "DELETE", "UPDATE", "PUT", "PATCH"]
   })
 )
