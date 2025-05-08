@@ -180,11 +180,14 @@ exports.viewAllUsers = catchAsyncErrors(async (req, res, next) => {
   }
 
   try {
-    const usersSnapshot = await db.collection("users").get()
-    const users = usersSnapshot.docs.map(doc => doc.data())
-    res.json({ error: null, response: users })
+    const usersSnapshot = await db.collection("users").get();
+    const users = usersSnapshot.docs.map(doc => ({
+      username: doc.id, 
+      ...doc.data(),    
+    }));
+    res.json({ error: null, response: users });
   } catch (err) {
-    return next(new ErrorHandler("Internal Server Error!", 500))
+    return next(new ErrorHandler("Internal Server Error!", 500));
   }
 })
 
