@@ -1,5 +1,5 @@
 const catchAsyncErrors = require("../middlewares/catchAsyncErrors")
-const connection = require("../config/database")
+const db = require("../utils/supabaseQueries")
 // const session = require("express-session")
 const bcrypt = require("bcrypt")
 const ErrorHandler = require("../utils/errorHandlers")
@@ -49,7 +49,7 @@ async function checkUserActive(res, req, next) {
     return res.json({ error: "Invalid user/token!" })
   }
 
-  const [results] = connection.execute("SELECT userGroup FROM users WHERE username ?", [user])
+  const [results, error] = await db.select('users', '*', { username: user })
   if (results.length < 1 || results[0].userGroup == 0) {
     return res.json({ error: "User has been disabled!" })
   }
@@ -76,9 +76,9 @@ exports.registerUser = catchAsyncErrors(async (req, res) => {
     return res.json({ error: "Token is invalid!" })
   }
 
-  // Check Active
-  const [resultsActive] = await connection.execute("SELECT isActive FROM users WHERE username = ?", [verify])
-  if (resultsActive[0].isActive === 0) {
+  // Check Active - Modified to use Supabase
+  const [resultsActive, activeError] = await db.select('users', 'isActive', { username: verify })
+  if (activeError || resultsActive[0].isActive === 0) {
     return res.status(400).json({
       error: "User is inactive!"
     })
@@ -101,9 +101,18 @@ exports.registerUser = catchAsyncErrors(async (req, res) => {
       // Hashing password with bcrypt
       const hashedPassword = await bcrypt.hash(password, 10)
 
-      const sql = "INSERT INTO users (username, email, password, userGroup, isActive) VALUES (?, ?, ?, ?, ?)"
-      const [rows] = await connection.execute(sql, [username, email || null, hashedPassword, userGroup || null, isActive || null])
-      // console.log(rows)
+      // Modified to use Supabase
+      const [rows, insertError] = await db.insert('users', {
+        username, 
+        email: email || null,
+        password: hashedPassword,
+        userGroup: userGroup || null,
+        isActive: isActive || null
+      })
+      
+      if (insertError) {
+        throw insertError
+      }
 
       res.status(200).json({
         success: true,
@@ -143,17 +152,17 @@ exports.loginUser = catchAsyncErrors(async (req, res, next) => {
   }
 
   try {
-    // Check if user exist & password validity
-    const [results] = await connection.execute("SELECT * FROM users WHERE username = ?", [username])
-    if (results.length < 1) {
+    // Check if user exist & password validity - Modified to use Supabase
+    const [results, userError] = await db.select('users', '*', { username })
+    if (userError || results.length < 1) {
       return res.json({
         error: "Username and/or password is incorrect!"
       })
     }
 
-    // Check Active
-    const [resultsActive] = await connection.execute("SELECT isActive FROM users WHERE username = ?", [username])
-    if (resultsActive[0].isActive === 0) {
+    // Check Active - Modified to use Supabase
+    const [resultsActive, activeError] = await db.select('users', 'isActive', { username })
+    if (activeError || resultsActive[0].isActive === 0) {
       return res.json({
         error: "User is inactive!"
       })
@@ -196,7 +205,7 @@ exports.viewAllUsers = catchAsyncErrors(async (req, res, next) => {
     return res.json({ error: "Token is invalid!" })
   }
 
-  const [resultsActive] = await connection.execute("SELECT isActive FROM users WHERE username = ?", [verify])
+  const [resultsActive] = await db.select('users', 'isActive', { username: verify })
   if (resultsActive[0].isActive === 0) {
     return res.json({
       error: "User is inactive!"
@@ -211,7 +220,7 @@ exports.viewAllUsers = catchAsyncErrors(async (req, res, next) => {
   }
 
   try {
-    const [results] = await connection.execute("SELECT username, password, email, userGroup, isActive FROM users")
+    const [results] = await db.select('users', '*')
     res.json({ error: null, response: results })
   } catch (err) {
     return next(new ErrorHandler("Internal Server Error!", 500))
@@ -243,7 +252,7 @@ exports.viewAllGroups = catchAsyncErrors(async (req, res, next) => {
   // }
 
   try {
-    const [results] = await connection.execute("SELECT * from `groups`")
+    const [results] = await db.select('groups', '*')
     res.json({ error: null, response: results })
   } catch (err) {
     return next(new ErrorHandler("Internal Server Error!", 500))
@@ -270,14 +279,14 @@ exports.createGroup = catchAsyncErrors(async (req, res, next) => {
   }
 
   try {
-    const [results] = await connection.execute("SELECT * from `groups` WHERE userGroup = ?", [userGroup])
+    const [results] = await db.select('groups', '*', { userGroup })
 
     if (results.length > 0) {
       res.json({
         error: "This user group already exists!"
       })
     }
-    const [replace] = await connection.execute("INSERT INTO `groups` (userGroup) VALUES (?)", [userGroup])
+    const [replace] = await db.insert('groups', { userGroup })
     res.json({ error: null, message: "User group has been added!" })
   } catch (err) {
     return next(new ErrorHandler("Internal Server Error!", 500))
@@ -314,7 +323,7 @@ exports.editDetails = catchAsyncErrors(async (req, res, next) => {
     const verify = await verifyUser(token)
     console.log("verify here: ", verify)
 
-    const [results] = await connection.execute("SELECT * FROM users WHERE username = ?", [username])
+    const [results] = await db.select('users', '*', { username })
 
     // Check if user exists in the database
     if (results.length < 1) {
@@ -364,7 +373,7 @@ exports.editDetails = catchAsyncErrors(async (req, res, next) => {
     params.push(username)
 
     console.log(query, params)
-    await connection.execute(query, params)
+    await db.execute(query, params)
     return res.json({
       error: null,
       message: "Details changed successfully!",
@@ -420,7 +429,7 @@ exports.viewProfile = catchAsyncErrors(async (req, res, next) => {
 
   try {
     // Use a prepared statement to prevent SQL injection
-    const [results] = await connection.execute("SELECT username, email FROM users WHERE username = ?", [verify])
+    const [results] = await db.select('users', '*', { username: verify })
 
     if (results.length === 0) {
       return res.json({ error: "User not found" })
@@ -448,13 +457,13 @@ exports.editProfile = catchAsyncErrors(async (req, res, next) => {
   try {
     const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,10}$/
     const verify = await verifyToken(token)
-    const [resultsActive] = await connection.execute("SELECT isActive FROM users WHERE username = ?", [verify.user])
+    const [resultsActive] = await db.select('users', 'isActive', { username: verify.user })
     if (resultsActive[0].isActive === 0) {
       return res.status(400).json({
         error: "User is inactive!"
       })
     }
-    const [results] = await connection.execute("SELECT * FROM users WHERE username = ?", [verify.user])
+    const [results] = await db.select('users', '*', { username: verify.user })
 
     // Check if user exists in db
     if (results.length < 1) {
@@ -491,7 +500,7 @@ exports.editProfile = catchAsyncErrors(async (req, res, next) => {
     query += " WHERE username = ?"
     params.push(verify.user)
 
-    await connection.execute(query, params)
+    await db.execute(query, params)
     return res.json({
       error: null,
       message: "Password/Username changed successfully!",

@@ -1,5 +1,5 @@
 const catchAsyncErrors = require("../middlewares/catchAsyncErrors")
-const connection = require("../config/database")
+const db = require("../utils/supabaseQueries")
 // const session = require("express-session")
 const bcrypt = require("bcrypt")
 const ErrorHandler = require("../utils/errorHandlers")
@@ -44,8 +44,8 @@ async function checkUserActive(res, req, next) {
     return res.json({ error: "Invalid user/token!" })
   }
 
-  const [results] = connection.execute("SELECT userGroup FROM users WHERE username ?", [user])
-  if (results.length < 1 || results[0].userGroup == 0) {
+  const [results, error] = await db.select('users', '*', { username: user })
+  if (error || results.length < 1 || results[0].userGroup == 0) {
     return res.json({ error: "User has been disabled!" })
   }
   next()
@@ -80,22 +80,22 @@ exports.createApplication = catchAsyncErrors(async (req, res) => {
   }
 
   try {
-    // Create application
-    const [rows] = await connection.execute(
-      "INSERT INTO application (App_Acronym, App_Description, App_Rnumber, App_startDate, App_endDate, App_permit_Open, App_permit_toDoList, App_permit_Doing, App_permit_Done, App_permit_Create) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        App_Acronym,
-        App_Description || null,
-        App_Rnumber,
-        App_startDate,
-        App_endDate,
-        App_permit_Open || null,
-        App_permit_toDoList || null,
-        App_permit_Doing || null,
-        App_permit_Done || null,
-        App_permit_Create
-      ]
-    )
+    // Create application using Supabase
+    const [rows, error] = await db.insert('application', {
+      App_Acronym,
+      App_Description: App_Description || null,
+      App_Rnumber,
+      App_startDate,
+      App_endDate,
+      App_permit_Open: App_permit_Open || null,
+      App_permit_toDoList: App_permit_toDoList || null,
+      App_permit_Doing: App_permit_Doing || null,
+      App_permit_Done: App_permit_Done || null,
+      App_permit_Create
+    })
+    
+    if (error) throw error
+    
     res.status(200).json({
       success: true,
       message: "Application created!",
@@ -114,8 +114,11 @@ exports.createApplication = catchAsyncErrors(async (req, res) => {
 
 exports.viewAllApplication = catchAsyncErrors(async (req, res) => {
   try {
-    // View all application
-    const [results] = await connection.execute("SELECT * FROM application")
+    // View all application using Supabase
+    const [results, error] = await db.select('application')
+    
+    if (error) throw error
+    
     res.status(200).json({
       success: true,
       message: "All application displayed!",
@@ -159,10 +162,24 @@ exports.editApplication = catchAsyncErrors(async (req, res) => {
   }
 
   try {
-    const response = await connection.execute(
-      "UPDATE application SET App_Description = ?, App_startDate = ?, App_endDate = ?, App_permit_Open = ?, App_permit_toDoList = ?, App_permit_Doing = ?, App_permit_Done = ?, App_permit_Create = ? WHERE App_Acronym = ?",
-      [App_Description, App_startDate, App_endDate, App_permit_Open, App_permit_toDoList, App_permit_Doing, App_permit_Done, App_permit_Create, App_Acronym] // Corrected parameters
+    // Update application using Supabase
+    const [response, error] = await db.update(
+      'application',
+      {
+        App_Description,
+        App_startDate,
+        App_endDate,
+        App_permit_Open,
+        App_permit_toDoList,
+        App_permit_Doing,
+        App_permit_Done,
+        App_permit_Create
+      },
+      { App_Acronym }
     )
+    
+    if (error) throw error
+    
     return res.status(200).json({
       success: "Application has been updated!"
     })

@@ -1,17 +1,24 @@
-const connection = require("../config/database")
+// const connection = require("../config/database")
+const db = require("../utils/supabaseQueries")
 
-async function checkGroup(username, groupToCheck) {
+/**
+ * Check if user is in specified group
+ * @param {String} username - The username to check
+ * @param {String} group - The group name to check against
+ * @returns {Boolean} - Return boolean whether user is in group
+ */
+async function checkGroup(username, group) {
   try {
-    const sql = "SELECT * FROM users WHERE username = ? AND usergroup LIKE ?"
-    const [results] = await connection.execute(sql, [username, `%${groupToCheck}%`])
-    if (results.length > 0) {
-      return true
-    } else {
+    const [rows, error] = await db.select('users', 'userGroup', { username })
+    
+    if (error || rows.length === 0) {
       return false
     }
-  } catch (err) {
-    console.error("Error in checkGroup:", err)
-    throw err // You can throw the error to be handled in the calling function
+    
+    return rows[0].userGroup === group
+  } catch (error) {
+    console.error('Error checking group:', error)
+    return false
   }
 }
 
