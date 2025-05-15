@@ -18,7 +18,7 @@ router.post("/positions", verifyAdmin, HRController.createPosition);
 router.put("/positions", verifyAdmin, HRController.updatePosition);
 
 // Employee routes - Admin access for create/update/delete
-router.get("/employees", verifyEmployee, HRController.getAllEmployees); // Available to all employees
+router.get("/employees", verifyAdmin, HRController.getAllEmployees); // Available to all employees
 router.post("/employees", verifyAdmin, HRController.createEmployee);
 router.put("/employees", verifyAdmin, HRController.updateEmployee);
 router.delete("/employees", verifyAdmin, HRController.deleteEmployee);
