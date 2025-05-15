@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "SET NODE_ENV=production & node app.js",
+    "start:prod": "NODE_ENV=production node app.js",
     "dev": "nodemon app.js",
     "migrate:schema": "node config/migrate.js",
     "migrate:data": "node config/migrateData.js",

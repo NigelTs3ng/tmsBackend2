@@ -8,10 +8,12 @@ const cors = require("cors")
 
 app.use(express.json())
 
-// Configure CORS
+// Configure CORS to work in both development and production
 app.use(
   cors({
-    origin: "http://localhost:8090",
+    origin: process.env.NODE_ENV === 'production' 
+      ? [process.env.FRONTEND_URL || 'https://your-frontend-domain.com'] // Replace with your actual frontend URL when deployed
+      : "http://localhost:8090",
     methods: ["GET", "POST", "DELETE", "UPDATE", "PUT", "PATCH"]
   })
 )
@@ -45,7 +47,7 @@ app.use("", (req, res, next) => {
 // A3 routes
 // app.use("/")
 
-const PORT = process.env.PORT // Default to 3000 if process.env.PORT is not set
+const PORT = process.env.PORT || 8090 // Use environment PORT or default to 8090
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}!`)
 })
