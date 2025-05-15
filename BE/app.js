@@ -12,9 +12,10 @@ app.use(express.json())
 app.use(
   cors({
     origin: process.env.NODE_ENV === 'production' 
-      ? [process.env.FRONTEND_URL || 'https://your-frontend-domain.com'] // Replace with your actual frontend URL when deployed
-      : "http://localhost:8090",
-    methods: ["GET", "POST", "DELETE", "UPDATE", "PUT", "PATCH"]
+      ? [process.env.FRONTEND_URL || 'https://your-frontend-domain.com', 'http://localhost:9000'] // Allow both deployed frontend and local development
+      : ["http://localhost:8090", "http://localhost:9000"],
+    methods: ["GET", "POST", "DELETE", "UPDATE", "PUT", "PATCH"],
+    credentials: true
   })
 )
 
