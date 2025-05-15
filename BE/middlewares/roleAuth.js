@@ -42,7 +42,7 @@ exports.verifyAdmin = async (req, res, next) => {
     
     // Check if user is admin
     const [userGroup] = await db.select('groups', '*', { id: userDetails[0].userGroup });
-    if (!userGroup || userGroup.length === 0 || userGroup[0].userGroup !== 'admin') {
+    if (!userGroup || userGroup.length === 0 || userGroup[0].userGroup !== 1) {
       return res.status(403).json({
         error: "Admin access required for this operation."
       });
