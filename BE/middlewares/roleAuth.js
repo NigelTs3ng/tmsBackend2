@@ -34,15 +34,15 @@ exports.verifyAdmin = async (req, res, next) => {
     }
     
     // Check if user is active
-    if (userDetails[0].isActive === 0) {
+    if (userDetails[0].isactive === 0) {
       return res.status(403).json({
         error: "User account is inactive."
       });
     }
     
     // Check if user is admin
-    const [userGroup] = await db.select('groups', '*', { id: userDetails[0].userGroup });
-    if (!userGroup || userGroup.length === 0 || userGroup[0].userGroup !== 1) {
+    const [userGroup] = await db.select('groups', '*', { id: userDetails[0].usergroup });
+    if (!userGroup || userGroup.length === 0 || userGroup[0].usergroup !== 'admin') {
       return res.status(403).json({
         error: "Admin access required for this operation."
       });
@@ -52,7 +52,7 @@ exports.verifyAdmin = async (req, res, next) => {
     req.user = {
       username,
       isAdmin: true,
-      userGroup: userGroup[0].userGroup
+      userGroup: userGroup[0].usergroup
     };
     
     next();
@@ -89,7 +89,7 @@ exports.verifyEmployee = async (req, res, next) => {
     }
     
     // Check if user is active
-    if (userDetails[0].isActive === 0) {
+    if (userDetails[0].isactive === 0) {
       return res.status(403).json({
         error: "User account is inactive."
       });
@@ -101,8 +101,8 @@ exports.verifyEmployee = async (req, res, next) => {
     let employee_id = null;
     
     // Check if user is admin (admins don't need to be employees to access)
-    const [userGroup] = await db.select('groups', '*', { id: userDetails[0].userGroup });
-    if (userGroup && userGroup.length > 0 && userGroup[0].userGroup === 1) {
+    const [userGroup] = await db.select('groups', '*', { id: userDetails[0].usergroup });
+    if (userGroup && userGroup.length > 0 && userGroup[0].usergroup === 'admin') {
       isAdmin = true;
     }
     
@@ -121,7 +121,7 @@ exports.verifyEmployee = async (req, res, next) => {
       username,
       isAdmin,
       employee_id,
-      userGroup: userGroup && userGroup.length > 0 ? userGroup[0].userGroup : null
+      userGroup: userGroup && userGroup.length > 0 ? userGroup[0].usergroup : null
     };
     
     next();
@@ -158,7 +158,7 @@ exports.verifyManager = async (req, res, next) => {
     }
     
     // Check if user is active
-    if (userDetails[0].isActive === 0) {
+    if (userDetails[0].isactive === 0) {
       return res.status(403).json({
         error: "User account is inactive."
       });
@@ -168,8 +168,8 @@ exports.verifyManager = async (req, res, next) => {
     let isManager = false;
     
     // Check if user is admin
-    const [userGroup] = await db.select('groups', '*', { id: userDetails[0].userGroup });
-      if (userGroup && userGroup.length > 0 && userGroup[0].userGroup === 1) {
+    const [userGroup] = await db.select('groups', '*', { id: userDetails[0].usergroup });
+    if (userGroup && userGroup.length > 0 && userGroup[0].usergroup === 'admin') {
       isAdmin = true;
     }
     
@@ -209,7 +209,7 @@ exports.verifyManager = async (req, res, next) => {
         isAdmin,
         isManager,
         employee_id,
-        userGroup: userGroup && userGroup.length > 0 ? userGroup[0].userGroup : null
+        userGroup: userGroup && userGroup.length > 0 ? userGroup[0].usergroup : null
       };
     } else {
       // If admin, they automatically have manager privileges
@@ -217,7 +217,7 @@ exports.verifyManager = async (req, res, next) => {
         username,
         isAdmin,
         isManager: true,
-        userGroup: userGroup[0].userGroup
+        userGroup: userGroup[0].usergroup
       };
     }
     

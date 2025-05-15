@@ -23,8 +23,8 @@ async function verifyAdminAccess(token) {
   }
 
   // Check if user is admin group
-  const [userGroup] = await db.select('groups', '*', { id: userDetails[0].userGroup });
-  if (!userGroup || userGroup.length === 0 || userGroup[0].userGroup !== 'admin') {
+  const [userGroup] = await db.select('groups', '*', { id: userDetails[0].usergroup });
+  if (!userGroup || userGroup.length === 0 || userGroup[0].usergroup !== 'admin') {
     return { error: "Only admin users can access this endpoint" };
   }
 
