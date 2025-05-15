@@ -102,7 +102,7 @@ exports.verifyEmployee = async (req, res, next) => {
     
     // Check if user is admin (admins don't need to be employees to access)
     const [userGroup] = await db.select('groups', '*', { id: userDetails[0].userGroup });
-    if (userGroup && userGroup.length > 0 && userGroup[0].userGroup === 'admin') {
+    if (userGroup && userGroup.length > 0 && userGroup[0].userGroup === 1) {
       isAdmin = true;
     }
     
@@ -169,7 +169,7 @@ exports.verifyManager = async (req, res, next) => {
     
     // Check if user is admin
     const [userGroup] = await db.select('groups', '*', { id: userDetails[0].userGroup });
-    if (userGroup && userGroup.length > 0 && userGroup[0].userGroup === 'admin') {
+      if (userGroup && userGroup.length > 0 && userGroup[0].userGroup === 1) {
       isAdmin = true;
     }
     
