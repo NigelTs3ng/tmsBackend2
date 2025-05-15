@@ -9,6 +9,10 @@
     "migrate:schema": "node config/migrate.js",
     "migrate:data": "node config/migrateData.js",
     "migrate": "npm run migrate:schema && npm run migrate:data",
+    "migrate:sql": "node config/directSQL.js",
+    "modify:schema": "node config/modifySchema.js",
+    "schema:example": "node config/schemaExample.js",
+    "check:tables": "node config/tableCheck.js",
     "test:connection": "node config/testConnection.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

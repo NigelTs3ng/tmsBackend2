@@ -1,6 +1,7 @@
 const express = require("express")
 const app = express()
 const Routes = require("./routes/Routes")
+const HRRoutes = require("./routes/hrRoutes")
 const cors = require("cors")
 
 // app.set("case sensitive routing", true)
@@ -18,7 +19,7 @@ app.use(
 app.use((req, res, next) => {
   // Middleware for valid endpoint check
   console.log(req.originalUrl)
-  const isValidURIPattern = /^(\/?[a-zA-Z0-9])+$/
+  const isValidURIPattern = /^(\/?[a-zA-Z0-9\-_\/])+$/  // Updated pattern to allow more route characters
 
   if (!isValidURIPattern.test(req.originalUrl)) {
     return res.json({
@@ -27,8 +28,14 @@ app.use((req, res, next) => {
   }
   next()
 })
-// User Routes
+
+// User and TMS Routes
 app.use("", Routes)
+
+// HR Routes with /hr prefix
+app.use("/hr", HRRoutes)
+
+// Default 404 route
 app.use("", (req, res, next) => {
   return res.json({
     code: "RS001"

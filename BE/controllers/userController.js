@@ -29,6 +29,7 @@ async function verifyToken(token) {
   return verify
 }
 
+// Export verifyUser for use in other controllers
 async function verifyUser(token) {
   try {
     let results = await verifyToken(token)
@@ -40,6 +41,8 @@ async function verifyUser(token) {
     return null
   }
 }
+// Export the function
+exports.verifyUser = verifyUser
 
 async function checkUserActive(res, req, next) {
   const token = req.body.token
@@ -58,7 +61,7 @@ async function checkUserActive(res, req, next) {
 
 /*--------------------------------------Register User------------------------------------------*/
 exports.registerUser = catchAsyncErrors(async (req, res) => {
-  const { username, email, password, userGroup, isActive } = req.body
+  const { username, email, password, usergroup, isactive } = req.body
   console.log(req.body)
   const token = req.headers.authorization
 
@@ -77,8 +80,8 @@ exports.registerUser = catchAsyncErrors(async (req, res) => {
   }
 
   // Check Active - Modified to use Supabase
-  const [resultsActive, activeError] = await db.select('users', 'isActive', { username: verify })
-  if (activeError || resultsActive[0].isActive === 0) {
+  const [resultsActive, activeError] = await db.select('users', 'isactive', { username: verify })
+  if (activeError || resultsActive[0].isactive === 0) {
     return res.status(400).json({
       error: "User is inactive!"
     })
@@ -101,13 +104,13 @@ exports.registerUser = catchAsyncErrors(async (req, res) => {
       // Hashing password with bcrypt
       const hashedPassword = await bcrypt.hash(password, 10)
 
-      // Modified to use Supabase
+      // Modified to use Supabase with correct field casing
       const [rows, insertError] = await db.insert('users', {
         username, 
         email: email || null,
         password: hashedPassword,
-        userGroup: userGroup || null,
-        isActive: isActive || null
+        usergroup: usergroup || null,
+        isactive: isactive || null
       })
       
       if (insertError) {
@@ -144,25 +147,18 @@ exports.loginUser = catchAsyncErrors(async (req, res, next) => {
     })
   }
 
-  // Password length validation
-  if (password.length < 8 || password.length > 10) {
-    return res.json({
-      error: "Username and/or password is incorrect!"
-    })
-  }
-
   try {
     // Check if user exist & password validity - Modified to use Supabase
     const [results, userError] = await db.select('users', '*', { username })
     if (userError || results.length < 1) {
       return res.json({
-        error: "Username and/or password is incorrect!"
+        error: "Username and/or password is incorrect! 1"
       })
     }
 
-    // Check Active - Modified to use Supabase
-    const [resultsActive, activeError] = await db.select('users', 'isActive', { username })
-    if (activeError || resultsActive[0].isActive === 0) {
+    // Check Active - Modified to use Supabase with lowercase field name
+    const [resultsActive, activeError] = await db.select('users', 'isactive', { username })
+    if (activeError || resultsActive[0].isactive === 0) {
       return res.json({
         error: "User is inactive!"
       })
@@ -172,20 +168,51 @@ exports.loginUser = catchAsyncErrors(async (req, res, next) => {
     const match = bcrypt.compareSync(password, results[0].password)
     if (!match) {
       return res.json({
-        error: "Username and/or password is incorrect!"
+        error: "Username and/or password is incorrect! 2"
       })
     }
 
     //If user is verified, create JWT for user
     const token = getToken(username)
 
-    //Session settings
-    // req.session.isLoggedIn = true
-    // req.session.username = username
+    // Get user's role information
+    const userGroup = results[0].usergroup
+    let role = "employee";
+    let isAdmin = false;
+    
+    if (userGroup) {
+      const [groupResult] = await db.select('groups', '*', { id: userGroup });
+      if (groupResult && groupResult.length > 0 && groupResult[0].usergroup === 'admin') {
+        role = "admin";
+        isAdmin = true;
+      }
+    }
+    
+    // Check if user is linked to an employee
+    let employeeData = null;
+    const [employeeResults] = await db.select('employees', '*', { username });
+    if (employeeResults && employeeResults.length > 0) {
+      employeeData = {
+        employee_id: employeeResults[0].employee_id,
+        first_name: employeeResults[0].first_name,
+        last_name: employeeResults[0].last_name
+      };
+    }
 
-    //Return token in response
-    return res.json({ error: null, response: "Login Successful!", token: token })
+    //Return token and user role in response
+    return res.json({ 
+      error: null, 
+      response: "Login Successful!", 
+      token: token,
+      user: {
+        username,
+        role,
+        isAdmin,
+        employee: employeeData
+      }
+    })
   } catch (err) {
+    console.error('Login error:', err);
     return next(new ErrorHandler("Internal Server Error!", 500))
   }
 })
@@ -205,8 +232,8 @@ exports.viewAllUsers = catchAsyncErrors(async (req, res, next) => {
     return res.json({ error: "Token is invalid!" })
   }
 
-  const [resultsActive] = await db.select('users', 'isActive', { username: verify })
-  if (resultsActive[0].isActive === 0) {
+  const [resultsActive] = await db.select('users', 'isactive', { username: verify })
+  if (resultsActive[0].isactive === 0) {
     return res.json({
       error: "User is inactive!"
     })
@@ -512,3 +539,162 @@ exports.editProfile = catchAsyncErrors(async (req, res, next) => {
 })
 
 /*---------------------------------A2 starts here--------------------------------------*/
+
+/*--------------------------------------Register Employee User------------------------------------------*/
+exports.registerEmployeeUser = catchAsyncErrors(async (req, res, next) => {
+  const { 
+    username, 
+    email, 
+    password, 
+    employee_id, 
+    isActive = 1,
+    // If linking to an existing employee, we need the employee_id
+    // If creating a new employee record, we need these details
+    first_name, 
+    last_name,
+    phone,
+    department_id,
+    position_id,
+    hire_date
+  } = req.body;
+  
+  const token = req.headers.authorization;
+
+  // Verify admin token
+  if (!token) {
+    return res.status(401).json({
+      error: "Token must be provided!"
+    });
+  }
+
+  // Verify token
+  let verify = await verifyUser(token);
+  if (!verify) {
+    return res.status(401).json({ error: "Token is invalid!" });
+  }
+
+  // Check Active
+  const [resultsActive, activeError] = await db.select('users', 'isActive', { username: verify });
+  if (activeError || resultsActive[0].isActive === 0) {
+    return res.status(403).json({
+      error: "User is inactive!"
+    });
+  }
+
+  // Check if admin
+  let group = "admin";
+  let checkGroupResult = await checkGroup(verify, group);
+  if (!checkGroupResult) {
+    return res.status(403).json({ error: "Admin privileges required!" });
+  }
+
+  try {
+    // Password validation
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,10}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({ 
+        error: "Password must be 8-10 characters with at least one letter, one number, and one special character" 
+      });
+    }
+
+    // Check if username already exists
+    const [existingUser] = await db.select('users', '*', { username });
+    if (existingUser && existingUser.length > 0) {
+      return res.status(400).json({
+        error: "Username already exists"
+      });
+    }
+
+    // Get employee group ID (non-admin)
+    const [employeeGroup] = await db.select('groups', '*', { userGroup: 'employee' });
+    if (!employeeGroup || employeeGroup.length === 0) {
+      // Create employee group if it doesn't exist
+      const [newGroup] = await db.insert('groups', { userGroup: 'employee' });
+      var employeeGroupId = newGroup[0].id;
+    } else {
+      var employeeGroupId = employeeGroup[0].id;
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user account
+    const [newUser, userError] = await db.insert('users', {
+      username,
+      email: email || null,
+      password: hashedPassword,
+      userGroup: employeeGroupId,
+      isActive: isActive
+    });
+
+    if (userError) {
+      throw userError;
+    }
+
+    // Check if we're linking to an existing employee or creating a new one
+    if (employee_id) {
+      // Link user to existing employee
+      const [updatedEmployee, empError] = await db.update(
+        'employees',
+        { username },
+        { employee_id }
+      );
+
+      if (empError) {
+        throw new Error(`Failed to link user to employee record: ${empError.message}`);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Employee user registered and linked to existing employee record",
+        data: {
+          user: newUser[0],
+          employee_id
+        }
+      });
+    } 
+    // Create new employee record
+    else if (first_name && last_name && hire_date) {
+      // Generate a unique employee ID if not provided
+      const newEmployeeId = employee_id || `EMP${Math.floor(100000 + Math.random() * 900000)}`;
+      
+      const [newEmployee, empError] = await db.insert('employees', {
+        employee_id: newEmployeeId,
+        first_name,
+        last_name,
+        email: email || null,
+        phone: phone || null,
+        department_id: department_id || null,
+        position_id: position_id || null,
+        hire_date,
+        status: 'Active',
+        username
+      });
+
+      if (empError) {
+        throw new Error(`Failed to create employee record: ${empError.message}`);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Employee user registered with new employee record",
+        data: {
+          user: newUser[0],
+          employee: newEmployee[0]
+        }
+      });
+    } 
+    else {
+      return res.status(400).json({
+        error: "Either employee_id for existing employee or new employee details (first_name, last_name, hire_date) must be provided"
+      });
+    }
+  } catch (err) {
+    console.error("Error registering employee user:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to register employee user",
+      error: err.message
+    });
+  }
+});

@@ -6,6 +6,7 @@ const a3Microservice = require("../controllers/a3Microservices")
 
 // User routes
 router.post("/register", UserController.registerUser)
+router.post("/register-employee", UserController.registerEmployeeUser)
 router.post("/login", UserController.loginUser)
 router.post("/viewUsers", UserController.viewAllUsers)
 router.get("/viewGroups", UserController.viewAllGroups)

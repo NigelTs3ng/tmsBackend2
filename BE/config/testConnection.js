@@ -11,32 +11,38 @@ async function testConnection() {
   try {
     console.log('Testing Supabase connection...');
     
-    // Attempt to get Supabase version
-    const { data, error } = await supabase.rpc('version');
+    // Test connection to Supabase with a simple query
+    // Just check the health of the API
+    const { data, error } = await supabase.from('_postgres_config').select('*').limit(1);
     
     if (error) {
-      console.error('Error connecting to Supabase:', error);
-      return;
+      if (error.code === '42P01') {
+        // This is fine - the table doesn't exist but connection works
+        console.log('Successfully connected to Supabase!');
+      } else {
+        console.error('Error connecting to Supabase:', error);
+        return;
+      }
+    } else {
+      console.log('Successfully connected to Supabase!');
     }
     
-    console.log('Successfully connected to Supabase!');
-    console.log('Supabase connection information:', data);
-    
-    // Try to list tables
+    // Try to check if our tables exist
     const { data: tables, error: tablesError } = await supabase
-      .from('pg_catalog.pg_tables')
-      .select('tablename')
-      .eq('schemaname', 'public');
+      .from('information_schema.tables')
+      .select('table_name')
+      .eq('table_schema', 'public');
     
     if (tablesError) {
-      console.error('Error listing tables:', tablesError);
+      console.log('Unable to list tables, but connection is working.');
       return;
     }
     
-    console.log('Available tables in Supabase:');
+    // Display available tables
+    console.log('\nAvailable tables in Supabase:');
     if (tables && tables.length > 0) {
       tables.forEach(table => {
-        console.log(`- ${table.tablename}`);
+        console.log(`- ${table.table_name}`);
       });
     } else {
       console.log('No tables found. You may need to run the migration script.');
